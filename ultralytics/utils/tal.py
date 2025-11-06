@@ -25,15 +25,15 @@ class TaskAlignedAssigner(nn.Module):
         eps (float): A small value to prevent division by zero.
     """
 
-    def __init__(self, topk=13, num_classes=80, alpha=1.0, beta=6.0, eps=1e-9):
+    def __init__(self, topk=13, num_classes=80, alpha=1.0, beta=6.0, eps=1e-9):#(10,10,0.5,6.0)
         """Initialize a TaskAlignedAssigner object with customizable hyperparameters."""
         super().__init__()
-        self.topk = topk
-        self.num_classes = num_classes
-        self.bg_idx = num_classes
-        self.alpha = alpha
-        self.beta = beta
-        self.eps = eps
+        self.topk = topk  #10
+        self.num_classes = num_classes #10
+        self.bg_idx = num_classes #10
+        self.alpha = alpha #0.5
+        self.beta = beta #6.0
+        self.eps = eps #1e-9
 
     @torch.no_grad()
     def forward(self, pd_scores, pd_bboxes, anc_points, gt_labels, gt_bboxes, mask_gt):
@@ -56,10 +56,10 @@ class TaskAlignedAssigner(nn.Module):
             fg_mask (Tensor): shape(bs, num_total_anchors)
             target_gt_idx (Tensor): shape(bs, num_total_anchors)
         """
-        self.bs = pd_scores.shape[0]
-        self.n_max_boxes = gt_bboxes.shape[1]
+        self.bs = pd_scores.shape[0] #batchsize=4
+        self.n_max_boxes = gt_bboxes.shape[1] #哪一张图片上最多gtbox的数量
 
-        if self.n_max_boxes == 0:
+        if self.n_max_boxes == 0: #一般为false,因为图片上不可能一个gt都没有
             device = gt_bboxes.device
             return (
                 torch.full_like(pd_scores[..., 0], self.bg_idx).to(device),
@@ -104,7 +104,7 @@ class TaskAlignedAssigner(nn.Module):
     
     def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt, power=False):
         """Compute alignment metric given predicted and ground truth bounding boxes."""
-        na = pd_bboxes.shape[-2]
+        na = pd_bboxes.shape[-2] #8400
         mask_gt = mask_gt.bool()  # b, max_num_obj, h*w
         overlaps = torch.zeros([self.bs, self.n_max_boxes, na], dtype=pd_bboxes.dtype, device=pd_bboxes.device)
         bbox_scores = torch.zeros([self.bs, self.n_max_boxes, na], dtype=pd_scores.dtype, device=pd_scores.device)
@@ -122,8 +122,8 @@ class TaskAlignedAssigner(nn.Module):
         if power:
             overlaps[mask_gt] = self.power_transform(overlaps[mask_gt].to(dtype=torch.float)).to(overlaps.dtype)
 
-        align_metric = bbox_scores.pow(self.alpha) * overlaps.pow(self.beta)
-        return align_metric, overlaps
+        align_metric = bbox_scores.pow(self.alpha) * overlaps.pow(self.beta) #a 0.5，b 6.0
+        return align_metric, overlaps #任务对齐值 ，iou值
 
     def iou_calculation(self, gt_bboxes, pd_bboxes):
         """IoU calculation for horizontal bounding boxes."""
@@ -233,9 +233,9 @@ class TaskAlignedAssigner(nn.Module):
         n_anchors = xy_centers.shape[0]
         bs, n_boxes, _ = gt_bboxes.shape
         lt, rb = gt_bboxes.view(-1, 1, 4).chunk(2, 2)  # left-top, right-bottom
-        bbox_deltas = torch.cat((xy_centers[None] - lt, rb - xy_centers[None]), dim=2).view(bs, n_boxes, n_anchors, -1)
+        bbox_deltas = torch.cat((xy_centers[None] - lt, rb - xy_centers[None]), dim=2).view(bs, n_boxes, n_anchors, -1)#（4，140，8400，4）
         # return (bbox_deltas.min(3)[0] > eps).to(gt_bboxes.dtype)
-        return bbox_deltas.amin(3).gt_(eps)
+        return bbox_deltas.amin(3).gt_(eps)#
 
     @staticmethod
     def select_highest_overlaps(mask_pos, overlaps, n_max_boxes):
@@ -318,10 +318,10 @@ def make_anchors(feats, strides, grid_cell_offset=0.5):
         sy, sx = torch.meshgrid(sy, sx, indexing="ij") if TORCH_1_10 else torch.meshgrid(sy, sx)
         anchor_points.append(torch.stack((sx, sy), -1).view(-1, 2))
         stride_tensor.append(torch.full((h * w, 1), stride, dtype=dtype, device=device))
-    return torch.cat(anchor_points), torch.cat(stride_tensor)
+    return torch.cat(anchor_points), torch.cat(stride_tensor) #list[(6400,2),(1600,2),(400,2)] list[(6400,1),(1600,1),(400,1)]
 
 
-def dist2bbox(distance, anchor_points, xywh=True, dim=-1):
+def dist2bbox(distance, anchor_points, xywh=True, dim=-1):#(4,8400,4) (8400,2)
     """Transform distance(ltrb) to box(xywh or xyxy)."""
     lt, rb = distance.chunk(2, dim)
     x1y1 = anchor_points - lt

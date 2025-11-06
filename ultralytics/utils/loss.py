@@ -309,7 +309,7 @@ class v8DetectionLoss:
 
     def __init__(self, model, tal_topk=10):  # model must be de-paralleled
         """Initializes v8DetectionLoss with the model, defining model-related properties and BCE loss function."""
-        device = next(model.parameters()).device  # get model device
+        device = next(model.parameters()).device  # get model device cuda:0
         h = model.args  # hyperparameters
 
         m = model.model[-1]  # Detect() module
@@ -320,30 +320,30 @@ class v8DetectionLoss:
         # self.bce = VarifocalLoss_YOLO(alpha=0.75, gamma=2.0) # VarifocalLoss
         # self.bce = QualityfocalLoss_YOLO(beta=2.0) # QualityfocalLoss
         self.hyp = h
-        self.stride = m.stride  # model strides
-        self.nc = m.nc  # number of classes
-        self.no = m.nc + m.reg_max * 4
-        self.reg_max = m.reg_max
-        self.device = device
+        self.stride = m.stride  # model strides tensor([ 8., 16., 32.], device='cuda:0')
+        self.nc = m.nc  # number of classes 10
+        self.no = m.nc + m.reg_max * 4  #74
+        self.reg_max = m.reg_max  #16
+        self.device = device  #cuda:0
 
-        self.use_dfl = m.reg_max > 1
+        self.use_dfl = m.reg_max > 1  #True
 
         self.assigner = TaskAlignedAssigner(topk=tal_topk, num_classes=self.nc, alpha=0.5, beta=6.0)
-        if hasattr(m, 'dfl_aux'):
+        if hasattr(m, 'dfl_aux'): #False
             self.assigner_aux = TaskAlignedAssigner(topk=13, num_classes=self.nc, alpha=0.5, beta=6.0)
             self.aux_loss_ratio = 0.25
         # self.assigner = ATSSAssigner(9, num_classes=self.nc)
-        self.bbox_loss = BboxLoss(m.reg_max).to(device)
+        self.bbox_loss = BboxLoss(m.reg_max).to(device) #16
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
-        
+        #proj=tensor([ 0.,  1.,  2.,  3.,  4.,  5.,  6.,  7.,  8.,  9., 10., 11., 12., 13., 14., 15.], device='cuda:0')
         # ATSS use        
         self.grid_cell_offset = 0.5
-        self.fpn_strides = list(self.stride.detach().cpu().numpy())
+        self.fpn_strides = list(self.stride.detach().cpu().numpy()) #[8.0, 16.0, 32.0]
         self.grid_cell_size = 5.0
 
     def preprocess(self, targets, batch_size, scale_tensor):
         """Preprocesses the target counts and matches with the input batch size to output a tensor."""
-        nl, ne = targets.shape
+        nl, ne = targets.shape #253 6
         if nl == 0:
             out = torch.zeros(batch_size, 0, ne - 1, device=self.device)
         else:
@@ -357,9 +357,9 @@ class v8DetectionLoss:
                 if n:
                     out[j, :n] = targets[matches, 1:]
             out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor))
-        return out
+        return out #坐标转换为了（x,y,x,y) (4,140,5)
 
-    def bbox_decode(self, anchor_points, pred_dist):
+    def bbox_decode(self, anchor_points, pred_dist): #(8400,2) (4,8400,64)
         """Decode predicted object bounding box coordinates from anchor points and distribution."""
         if self.use_dfl:
             b, a, c = pred_dist.shape  # batch, anchors, channels
@@ -372,36 +372,36 @@ class v8DetectionLoss:
         if hasattr(self, 'assigner_aux'):
             loss, batch_size = self.compute_loss_aux(preds, batch)
         else:
-            loss, batch_size = self.compute_loss(preds, batch)
+            loss, batch_size = self.compute_loss(preds, batch) #TODO 计算损失函数
         return loss.sum() * batch_size, loss.detach()
 
-    def compute_loss(self, preds, batch):
+    def compute_loss(self, preds, batch): #list[tensor(4,74,80,80),tensor(4,74,40,40),tensor(4,74,20,20)]
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
         feats = preds[1] if isinstance(preds, tuple) else preds
-        feats = feats[:self.stride.size(0)]
+        feats = feats[:self.stride.size(0)]  #feats[:3]
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
-            (self.reg_max * 4, self.nc), 1)
+            (self.reg_max * 4, self.nc), 1) #(4,64,8400) (4,10,8400)
 
-        pred_scores = pred_scores.permute(0, 2, 1).contiguous()
-        pred_distri = pred_distri.permute(0, 2, 1).contiguous()
+        pred_scores = pred_scores.permute(0, 2, 1).contiguous() #(4,8400,10)
+        pred_distri = pred_distri.permute(0, 2, 1).contiguous() #(4,8400,64)
 
-        dtype = pred_scores.dtype
-        batch_size = pred_scores.shape[0]
-        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
+        dtype = pred_scores.dtype  #torch.float16
+        batch_size = pred_scores.shape[0] #4
+        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w) tensor([640., 640.], device='cuda:0', dtype=torch.float16)
         anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
 
         # targets
         targets = torch.cat((batch['batch_idx'].view(-1, 1), batch['cls'].view(-1, 1), batch['bboxes']), 1)
         targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
         gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
-        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
+        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0) #(4,140,1)
 
         # pboxes
-        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # (4,8400,4)所有网格的预测框坐标xyxy, (b, h*w, 4)
 
         # ATSS
-        if isinstance(self.assigner, ATSSAssigner):
+        if isinstance(self.assigner, ATSSAssigner): #False
             anchors, _, n_anchors_list, _ = \
                generate_anchors(feats, self.fpn_strides, self.grid_cell_size, self.grid_cell_offset, device=feats[0].device)
             target_labels, target_bboxes, target_scores, fg_mask, _ = self.assigner(anchors, n_anchors_list, gt_labels, gt_bboxes, mask_gt, pred_bboxes.detach() * stride_tensor)
@@ -466,9 +466,9 @@ class v8DetectionLoss:
                 auto_iou = -1
             loss[1] = self.bce(pred_scores, target_scores.to(dtype), auto_iou).sum() / target_scores_sum  # BCE
         
-        loss[0] *= self.hyp.box  # box gain
-        loss[1] *= self.hyp.cls  # cls gain
-        loss[2] *= self.hyp.dfl  # dfl gain
+        loss[0] *= self.hyp.box  # box gain 7.5
+        loss[1] *= self.hyp.cls  # cls gain 0.5
+        loss[2] *= self.hyp.dfl  # dfl gain 1.5
         return loss, batch_size
     
     def compute_loss_aux(self, preds, batch):

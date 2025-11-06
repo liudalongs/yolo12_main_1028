@@ -182,7 +182,7 @@ class BaseTrainer:
             world_size = 0
 
         # Run subprocess if DDP training, else train normally
-        if world_size > 1 and "LOCAL_RANK" not in os.environ:
+        if world_size > 1 and "LOCAL_RANK" not in os.environ: #笔记本电脑略过这段代码
             # Argument checks
             if self.args.rect:
                 LOGGER.warning("WARNING ⚠️ 'rect=True' is incompatible with Multi-GPU training, setting 'rect=False'")
@@ -205,7 +205,7 @@ class BaseTrainer:
                 ddp_cleanup(self, str(file))
 
         else:
-            self._do_train(world_size)
+            self._do_train(world_size) #1
 
     def _setup_scheduler(self):
         """Initialize training learning rate scheduler."""
@@ -228,7 +228,7 @@ class BaseTrainer:
             world_size=world_size,
         )
 
-    def _setup_train(self, world_size):
+    def _setup_train(self, world_size): #1
         """Builds dataloaders and optimizer on correct rank process."""
         # Model
         self.run_callbacks("on_pretrain_routine_start")
@@ -384,11 +384,11 @@ class BaseTrainer:
                     temp = get_temperature(i + 1, epoch, len(self.train_loader), temp_epoch=20, temp_init_value=1.0)
                     self.model.net_update_temperature(temp)
                 
-                # Forward
+                # Forward 从这里开始看，这里才是重点
                 with autocast(self.amp):
                     batch = self.preprocess_batch(batch)
                     self.loss, self.loss_items = self.model(batch)
-                    if RANK != -1:
+                    if RANK != -1: #跳过
                         self.loss *= world_size
                     self.tloss = (
                         (self.tloss * i + self.loss_items) / (i + 1) if self.tloss is not None else self.loss_items
@@ -413,7 +413,7 @@ class BaseTrainer:
                             break
 
                 # Log
-                if RANK in {-1, 0}:
+                if RANK in {-1, 0}: #略过
                     loss_length = self.tloss.shape[0] if len(self.tloss.shape) else 1
                     pbar.set_description(
                         ("%11s" * 2 + "%11.4g" * (2 + loss_length))

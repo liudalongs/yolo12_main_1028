@@ -80,7 +80,7 @@ class DFL(nn.Module):
     def forward(self, x):
         """Applies a transformer layer on input tensor 'x' and returns a tensor."""
         b, _, a = x.shape  # batch, channels, anchors
-        return self.conv(x.view(b, 4, self.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a)
+        return self.conv(x.view(b, 4, self.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a) #每个锚框的四个坐标值
         # return self.conv(x.view(b, self.c1, 4, a).softmax(1)).view(b, 4, a)
 
 
@@ -234,17 +234,17 @@ class C2(nn.Module):
 class C2f(nn.Module):
     """Faster Implementation of CSP Bottleneck with 2 convolutions."""
 
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5): # [32, 64, 1, True, 1, 0.25]
         """Initializes a CSP bottleneck with 2 convolutions and n Bottleneck blocks for faster processing."""
         super().__init__()
         self.c = int(c2 * e)  # hidden channels
         self.cv1 = Conv(c1, 2 * self.c, 1, 1)
-        self.cv2 = Conv((2 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)  # optional act=FReLU(c2) 2+n是对的，因为初始值在通道数上分为了两半
         self.m = nn.ModuleList(Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n))
 
     def forward(self, x):
         """Forward pass through C2f layer."""
-        y = list(self.cv1(x).chunk(2, 1))
+        y = list(self.cv1(x).chunk(2, 1))  # 将张量沿着指定的维度1 平均分割成 2 个部分 y 变成了一个包含两个张量的列表
         y.extend(m(y[-1]) for m in self.m)
         return self.cv2(torch.cat(y, 1))
 
@@ -733,9 +733,9 @@ class C3f(nn.Module):
 class C3k2(C2f):
     """Faster Implementation of CSP Bottleneck with 2 convolutions."""
 
-    def __init__(self, c1, c2, n=1, c3k=False, e=0.5, g=1, shortcut=True):
+    def __init__(self, c1, c2, n=1, c3k=False, e=0.5, g=1, shortcut=True): # [32, 64, 1, False, 0.25]
         """Initializes the C3k2 module, a faster CSP Bottleneck with 2 convolutions and optional C3k blocks."""
-        super().__init__(c1, c2, n, shortcut, g, e)
+        super().__init__(c1, c2, n, shortcut, g, e) # [32, 64, 1, True, 1,0.25]
         self.m = nn.ModuleList(
             C3k(self.c, self.c, 2, shortcut, g) if c3k else Bottleneck(self.c, self.c, shortcut, g) for _ in range(n)
         )
@@ -744,7 +744,7 @@ class C3k2(C2f):
 class C3k(C3):
     """C3k is a CSP bottleneck module with customizable kernel sizes for feature extraction in neural networks."""
 
-    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5, k=3):
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5, k=3): # [32, 64, 1, True, 1,0.25]
         """Initializes the C3k module with specified channels, number of layers, and configurations."""
         super().__init__(c1, c2, n, shortcut, g, e)
         c_ = int(c2 * e)  # hidden channels
@@ -1233,11 +1233,11 @@ class AAttn(nn.Module):
     def __init__(self, dim, num_heads, area=1):
         """Initializes the area-attention module, a simple yet efficient attention module for YOLO."""
         super().__init__()
-        self.area = area
+        self.area = area #4
 
-        self.num_heads = num_heads
-        self.head_dim = head_dim = dim // num_heads
-        all_head_dim = head_dim * self.num_heads
+        self.num_heads = num_heads #ec2//32
+        self.head_dim = head_dim = dim // num_heads #ec2//ec2//32
+        all_head_dim = head_dim * self.num_heads #ec2
 
         self.qk = Conv(dim, all_head_dim * 2, 1, act=False)
         self.v = Conv(dim, all_head_dim, 1, act=False)
@@ -1266,7 +1266,7 @@ class AAttn(nn.Module):
             k = k.view(B, N, self.num_heads, self.head_dim)
             v = v.view(B, N, self.num_heads, self.head_dim)
 
-            x = flash_attn_func(
+            x = flash_attn_func( #可忽略
                 q.contiguous().half(),
                 k.contiguous().half(),
                 v.contiguous().half()
@@ -1347,8 +1347,10 @@ class ABlock(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = nn.Sequential(Conv(dim, mlp_hidden_dim, 1), Conv(mlp_hidden_dim, dim, 1, act=False))
 
+        #  nn.Module.apply(fn) 是 PyTorch 的内置方法，它的作用是：
+        # 递归地将函数fn应用于模块本身及其所有子模块（children）
+        # 通常在__init__的最后调用，确保所有层都已创建。
         self.apply(self._init_weights)
-
     def _init_weights(self, m):
         """Initialize weights using a truncated normal distribution."""
         if isinstance(m, nn.Conv2d):
@@ -1387,7 +1389,7 @@ class A2C2f(nn.Module):
     """
 
     def __init__(self, c1, c2, n=1, a2=True, area=1, residual=False, mlp_ratio=2.0, e=0.5, g=1, shortcut=True):
-        """
+        """          #[128,128, 2,   True,    4]
         Area-Attention C2f module for enhanced feature extraction with area-based attention mechanisms.
 
         Args:
@@ -1421,7 +1423,7 @@ class A2C2f(nn.Module):
     def forward(self, x):
         """Forward pass through R-ELAN layer."""
         y = [self.cv1(x)]
-        y.extend(m(y[-1]) for m in self.m)
+        y.extend(m(y[-1]) for m in self.m) #nn.ModuleList里面有两个nn.Sequential
         y = self.cv2(torch.cat(y, 1))
         if self.gamma is not None:
             return x + self.gamma.view(-1, len(self.gamma), 1, 1) * y

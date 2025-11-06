@@ -28,11 +28,12 @@ from ultralytics import YOLO
 
 if __name__ == '__main__':
     model = YOLO('ultralytics/cfg/models/12/yolo12.yaml') # YOLO12
+    #model=YOLO('runs/train/exp10/weights/last.pt')  #断点续训 下面resume=True要打开
     # model.load('yolo11n.pt') # loading pretrain weights
     model.train(data='VisDrone2019yolo.yaml',
                 cache=False,
                 imgsz=640,
-                epochs=300,
+                epochs=1,
                 batch=4,
                 close_mosaic=0, # 最后多少个epoch关闭mosaic数据增强，设置0代表全程开启mosaic训练
                 workers=4, # Windows下出现莫名其妙卡主的情况可以尝试把workers设置为0

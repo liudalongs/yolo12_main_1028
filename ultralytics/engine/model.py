@@ -246,7 +246,7 @@ class Model(nn.Module):
             >>> model._new("yolov8n.yaml", task="detect", verbose=True)
         """
         cfg_dict = yaml_model_load(cfg)
-        self.cfg = cfg
+        self.cfg = cfg  #'ultralytics/cfg/models/12/yolo12.yaml'
         self.task = task or guess_model_task(cfg_dict)
         self.model = (model or self._smart_load("model"))(cfg_dict, verbose=verbose and RANK == -1)  # build model
         self.overrides["model"] = self.cfg
@@ -774,15 +774,15 @@ class Model(nn.Module):
             >>> model = YOLO("yolov8n.pt")
             >>> results = model.train(data="coco128.yaml", epochs=3)
         """
-        self._check_is_pytorch_model()
+        self._check_is_pytorch_model() #可忽略
         if hasattr(self.session, "model") and self.session.model.id:  # Ultralytics HUB session with loaded model
             if any(kwargs):
                 LOGGER.warning("WARNING ⚠️ using HUB training arguments, ignoring local training arguments.")
             kwargs = self.session.train_args  # overwrite kwargs
 
-        checks.check_pip_update_available()
+        checks.check_pip_update_available()  #可忽略
 
-        overrides = yaml_load(checks.check_yaml(kwargs["cfg"])) if kwargs.get("cfg") else self.overrides
+        overrides = yaml_load(checks.check_yaml(kwargs["cfg"])) if kwargs.get("cfg") else self.overrides #{'model': 'ultralytics/cfg/models/12/yolo12.yaml', 'task': 'detect'}
         custom = {
             # NOTE: handle the case when 'cfg' includes 'data'.
             "data": overrides.get("data") or DEFAULT_CFG_DICT["data"] or TASK2DATA[self.task],
@@ -795,18 +795,19 @@ class Model(nn.Module):
 
         self.trainer = (trainer or self._smart_load("trainer"))(overrides=args, _callbacks=self.callbacks)
         if not args.get("resume"):  # manually set model only if not resuming
+            #self.trainer.get_model()这个函数在ultralytics/models/yolo/detect/train.py
             self.trainer.model = self.trainer.get_model(weights=self.model if self.ckpt else None, cfg=self.model.yaml)
             self.model = self.trainer.model
 
-        self.trainer.hub_session = self.session  # attach optional HUB session
-        self.trainer.train()
+        self.trainer.hub_session = self.session  # attach optional HUB session 忽略
+        self.trainer.train()  #开始训练 train()位于ultralytics/engine/trainer.py
         # Update model and cfg after training
-        if RANK in {-1, 0}:
-            ckpt = self.trainer.best if self.trainer.best.exists() else self.trainer.last
-            self.model, _ = attempt_load_one_weight(ckpt)
+        if RANK in {-1, 0}: #暂时忽略
+            ckpt = self.trainer.best if self.trainer.best.exists() else self.trainer.last #ckpt变量现在存储了最佳模型文件的路径
+            self.model, _ = attempt_load_one_weight(ckpt) #将磁盘上的最佳模型权重加载到 self.model 中
             self.overrides = self.model.args
             self.metrics = getattr(self.trainer.validator, "metrics", None)  # TODO: no metrics returned by DDP
-        return self.metrics
+        return self.metrics #将性能指标作为 train() 方法的返回值
 
     def tune(
         self,
@@ -1061,7 +1062,7 @@ class Model(nn.Module):
     #    name = self.__class__.__name__
     #    raise AttributeError(f"'{name}' object has no attribute '{attr}'. See valid attributes below.\n{self.__doc__}")
 
-    def _smart_load(self, key: str):
+    def _smart_load(self, key: str):  # key: 'model'  key :"trainer"
         """
         Loads the appropriate module based on the model task.
 
@@ -1088,7 +1089,7 @@ class Model(nn.Module):
             - The task_map attribute should be properly initialized with the correct mappings for each task.
         """
         try:
-            return self.task_map[self.task][key]
+            return self.task_map[self.task][key]  # task='detect'  key='trainer'
         except Exception as e:
             name = self.__class__.__name__
             mode = inspect.stack()[1][3]  # get the function name.

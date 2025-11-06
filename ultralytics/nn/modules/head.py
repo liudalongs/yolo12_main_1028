@@ -20,6 +20,23 @@ __all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10D
 
 class Detect(nn.Module):
     """YOLOv8 Detect head for detection models."""
+    # dynamic bool False是否启用动态网格重建。当模型输入尺寸变化时，如果为
+    # True，则每次前向传播都重新计算网格坐标；如果为
+    # False，则只在第一次计算并缓存，后续复用以提高效率。
+    # export bool False导出模式标志。当导出模型到ONNX或TorchScript等格式时，会设置为
+    # True。此时代码路径可能会改变，例如使用静态网格或不同的后处理方式，以确保兼容性。
+    # end2end bool False端到端模式标志。可能用于支持像RT - DETR这样的端到端检测器，其中后处理（如NMS）被集成到模型内部。
+    # max_det int 300
+    # 最大检测数量。在推理时，非极大值抑制（NMS）后保留的最大检测框数量。
+    # shape None None
+    # 用于存储最后一次网格的形状（通常是(batch_size, num_anchors, grid_height, grid_width,
+    #                                   2)）。用于判断输入尺寸是否变化，决定是否需要重建网格。
+    # anchors torch.Tensor torch.empty(0)
+    # 锚点框（AnchorBoxes）。初始化为空张量。在模型构建时，会根据配置文件（如yolov8n.yaml）中的anchors
+    # 参数填充。但在YOLOv8中，更常用的是基于网格大小自动生成的锚点，因此这个属性有时可能不被直接使用。
+    # strides torch.Tensor torch.empty(0)
+    # 特征图步长（Strides）。初始化为空张量。在模型初始化后，会填入每个检测层对应的下采样倍率（例如[
+    #     8, 16, 32]）。这个值对于将网格坐标缩放到原图至关重要。
 
     dynamic = False  # force grid reconstruction
     export = False  # export mode
@@ -29,15 +46,15 @@ class Detect(nn.Module):
     anchors = torch.empty(0)  # init
     strides = torch.empty(0)  # init
 
-    def __init__(self, nc=80, ch=()):
+    def __init__(self, nc=80, ch=()):  # [10, [64, 128, 256]]
         """Initializes the YOLOv8 detection layer with specified number of classes and channels."""
         super().__init__()
         self.nc = nc  # number of classes
-        self.nl = len(ch)  # number of detection layers
+        self.nl = len(ch)  # number of detection layers  3
         self.reg_max = 16  # DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
-        self.no = nc + self.reg_max * 4  # number of outputs per anchor
-        self.stride = torch.zeros(self.nl)  # strides computed during build
-        c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels
+        self.no = nc + self.reg_max * 4  # number of outputs per anchor 10+64
+        self.stride = torch.zeros(self.nl)  # strides computed during build   tensor([0., 0., 0.])
+        c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels 64,64
         self.cv2 = nn.ModuleList(
             nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
         )
@@ -49,21 +66,21 @@ class Detect(nn.Module):
             )
             for x in ch
         )
-        self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
+        self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity() #(batch, 4, anchors8400) #每个锚框的四个坐标值
 
         if self.end2end:
             self.one2one_cv2 = copy.deepcopy(self.cv2)
             self.one2one_cv3 = copy.deepcopy(self.cv3)
 
-    def forward(self, x):
+    def forward(self, x): #x=list{tensor(2,64,80,80),tensor(2,128,40,40),tensor(2,256,20,20)}
         """Concatenates and returns predicted bounding boxes and class probabilities."""
         if self.end2end:
             return self.forward_end2end(x)
 
-        for i in range(self.nl):
+        for i in range(self.nl):  #3
             x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
         if self.training:  # Training path
-            return x
+            return x  #x=list{tensor(2,74,80,80),tensor(2,74,40,40),tensor(2,74,20,20)}
         y = self._inference(x)
         return y if self.export else (y, x)
 

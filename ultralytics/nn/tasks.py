@@ -180,7 +180,7 @@ class BaseModel(nn.Module):
         Returns:
             (torch.Tensor): The last output of the model.
         """
-        if augment:
+        if augment: #False
             return self._predict_augment(x)
         return self._predict_once(x, profile, visualize, embed)
 
@@ -215,7 +215,7 @@ class BaseModel(nn.Module):
                 # print(f'layer id:{idx:>2} {m.type:>50} output shape:{", ".join([str(x_.size()) for x_ in x if x_ is not None])}')
                 x = x[-1]
             else:
-                x = m(x)  # run
+                x = m(x)  # run #x=list{tensor(2,74,80,80),tensor(2,74,40,40),tensor(2,74,20,20)}
                 y.append(x if m.i in self.save else None)  # save output
             
             # if type(x) in {list, tuple}:
@@ -382,15 +382,15 @@ class BaseModel(nn.Module):
         if getattr(self, "criterion", None) is None:
             self.criterion = self.init_criterion()
 
-        preds = self.forward(batch["img"]) if preds is None else preds
-        return self.criterion(preds, batch)
+        preds = self.forward(batch["img"]) if preds is None else preds #list[tensor(4,74,80,80),tensor(4,74,40,40),tensor(4,74,20,20)]
+        return self.criterion(preds, batch) #batch是dict ultralytics/utils/loss.py
 
     def init_criterion(self):
         """Initialize the loss criterion for the BaseModel."""
         raise NotImplementedError("compute_loss() needs to be implemented by task heads")
 
 
-class DetectionModel(BaseModel):
+class DetectionModel(BaseModel):  #cfg_dict, verbose=verbose and RANK == -1
     """YOLOv8 detection model."""
 
     def __init__(self, cfg="yolov8n.yaml", ch=3, nc=None, verbose=True):  # model, input channels, number of classes
@@ -416,7 +416,7 @@ class DetectionModel(BaseModel):
             LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml["nc"] = nc  # override YAML value
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose, warehouse_manager=self.warehouse_manager)  # model, savelist
-        self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
+        self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict 字典 例如{0:"0"}
         self.inplace = self.yaml.get("inplace", True)
         self.end2end = getattr(self.model[-1], "end2end", False)
         self.fgi = getattr(self.model[-1], "FGIF", False)
@@ -444,7 +444,7 @@ class DetectionModel(BaseModel):
                 return self.forward(x)[0] if isinstance(m, SEGMENT_CLASS + POSE_CLASS + OBB_CLASS) else self.forward(x)
 
             try:
-                m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(2, ch, s, s))])  # forward
+                m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(2, ch, s, s))])  # forward tensor([ 8., 16., 32.])
             except (RuntimeError, ValueError) as e:
                 if 'Not implemented on the CPU' in str(e) or 'Input type (torch.FloatTensor) and weight type (torch.cuda.FloatTensor)' in str(e) or \
                 'CUDA tensor' in str(e) or 'is_cuda()' in str(e) or 'carafe_forward_impl' in str(e) or 'Pointer argument (at 0) cannot be accessed from Triton (cpu tensor?)' in str(e):
@@ -452,7 +452,7 @@ class DetectionModel(BaseModel):
                     m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(2, ch, s, s).to(torch.device('cuda')))])  # forward
                 else:
                     raise e
-            self.stride = m.stride
+            self.stride = m.stride #
             m.bias_init()  # only run once
         else:
             self.stride = torch.Tensor([32])  # default stride for i.e. RTDETR
@@ -1054,21 +1054,21 @@ def attempt_load_one_weight(weight, device=None, inplace=True, fuse=False):
     return model, ckpt
 
 
-def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, input_channels(3)
+def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, input_channels(3)  d=cfg_dict ch=3
     """Parse a YOLO model.yaml dictionary into a PyTorch model."""
     import ast
 
     # Args
-    max_channels = float("inf")
-    nc, act, scales = (d.get(x) for x in ("nc", "activation", "scales"))
+    max_channels = float("inf")  #浮点数（正无穷）
+    nc, act, scales = (d.get(x) for x in ("nc", "activation", "scales")) #nc=10,activation=None,scales=一个字典
     depth, width, kpt_shape = (d.get(x, 1.0) for x in ("depth_multiple", "width_multiple", "kpt_shape"))
     if scales:
         scale = d.get("scale")
         if not scale:
-            scale = tuple(scales.keys())[0]
+            scale = tuple(scales.keys())[0]  #默认是n
             LOGGER.warning(f"WARNING ⚠️ no model scale passed. Assuming scale='{scale}'.")
         if len(scales[scale]) == 3:
-            depth, width, max_channels = scales[scale]
+            depth, width, max_channels = scales[scale] #scale='n' ,0.5 0.25 1024
         elif len(scales[scale]) == 4:
             depth, width, max_channels, threshold = scales[scale]
 
@@ -1079,7 +1079,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
 
     if verbose:
         LOGGER.info(f"\n{'':>3}{'from':>20}{'n':>3}{'params':>10}  {'module':<45}{'arguments':<30}")
-    ch = [ch]
+    ch = [ch] # # 把 3 变成 [3]列表
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
     is_backbone = False
     for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):  # from, number, module, args
@@ -1089,7 +1089,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                 if len(args) > 0:
                     if args[0] == 'head_channel':
                         args[0] = int(d[args[0]])
-            t = m
+            t = m  #t='ultralytics.nn.modules.conv.Conv'
             m = getattr(torch.nn, m[3:]) if 'nn.' in m else globals()[m]  # get module
         except:
             pass
@@ -1101,7 +1101,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                     except:
                         args[j] = a
 
-        n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
+        n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain depth=0.5 n版本
         if m in ((
             Classify, Conv, ConvTranspose, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, C2fPSA, DWConv, Focus, BottleneckCSP,
             C1, C2, C2f, C3k2, RepNCSPELAN4, ELAN1, ADown, AConv, SPPELAN, C2fAttn, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d,
@@ -1114,9 +1114,9 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
         ) + C3K2_CLASS + A2C2F_CLASS + C2PSA_CLASS):
             if args[0] == 'head_channel':
                 args[0] = d[args[0]]
-            c1, c2 = ch[f], args[0]
+            c1, c2 = ch[f], args[0]  #ch变为列表，里面初始值为[3]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
-                c2 = make_divisible(min(c2, max_channels) * width, 8)
+                c2 = make_divisible(min(c2, max_channels) * width, 8) #64*0.25
             if m is C2fAttn:
                 args[1] = make_divisible(min(args[1], max_channels // 2) * width, 8)  # embed channels
                 args[2] = int(
@@ -1432,17 +1432,17 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
             c2 = ch[f]
 
         if isinstance(c2, list) and m not in {ChannelTransformer, PyramidContextExtraction, CrossLayerChannelAttention, CrossLayerSpatialAttention, MutilScaleEdgeInfoGenetator}:
-            is_backbone = True
+            is_backbone = True  #yolo12几乎不可能让is_backbone为True
             m_ = m
             m_.backbone = True
         else:
             m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)  # module
-            t = str(m)[8:-2].replace('__main__.', '')  # module type
+            t = str(m)[8:-2].replace('__main__.', '')  # module type  'ultralytics.nn.modules.conv.Conv'
         m_.np = sum(x.numel() for x in m_.parameters())  # number params
         m_.i, m_.f, m_.type = i + 4 if is_backbone else i, f, t  # attach index, 'from' index, type
         if verbose:
             LOGGER.info(f"{i:>3}{str(f):>20}{n_:>3}{m_.np:10.0f}  {t:<45}{str(args):<30}")  # print
-        save.extend(x % (i + 4 if is_backbone else i) for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
+        save.extend(x % (i + 4 if is_backbone else i) for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist 需要保存的层标记
         layers.append(m_)
         if i == 0:
             ch = []
@@ -1452,7 +1452,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                 ch.insert(0, 0)
         else:
             ch.append(c2)
-    return nn.Sequential(*layers), sorted(save)
+    return nn.Sequential(*layers), sorted(save)  #返回模型结构、需要保存的要用到的中间层数 sorted(save) 就是把这些索引从小到大排序：[4, 6, 8, 11, 14, 17, 20]
 
 
 def yaml_model_load(path):

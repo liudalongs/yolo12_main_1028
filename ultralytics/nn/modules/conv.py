@@ -52,7 +52,7 @@ class Conv(nn.Module):
 
     def forward_fuse(self, x):
         """Perform transposed convolution of 2D data."""
-        return self.act(self.conv(x))
+        return self.act(self.conv(x)) #推理阶段使用,除去了nn.BatchNorm2d()
 
 
 class Conv2(Conv):
