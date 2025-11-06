@@ -49,3 +49,6 @@ if __name__ == '__main__':
                 project='runs',
                 name='exp',
                 )
+   import sys
+   print("Training done. Exiting to free GPU.")
+   sys.exit()
