@@ -19,7 +19,7 @@ def get_weight_size(path):
 if __name__ == '__main__':
     model_path = 'runs/train/exp/weights/best.pt'
     model = YOLO(model_path) # 选择训练好的权重路径
-    result = model.val(data='/root/dataset/dataset_visdrone/data.yaml',
+    result = model.val(data='VisDrone2019yolo.yaml',
                         split='val', # split可以选择train、val、test 根据自己的数据集情况来选择.
                         imgsz=640,
                         batch=16,

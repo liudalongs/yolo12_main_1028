@@ -27,8 +27,8 @@ from ultralytics import YOLO
 # YOLO13配置文件路径：ultralytics/cfg/models/13 预训练权重在这里下:https://github.com/iMoonLab/yolov13
 
 if __name__ == '__main__':
-    model = YOLO('ultralytics/cfg/models/12/yolo12.yaml') # YOLO12
-    #model=YOLO('runs/train/exp10/weights/last.pt')  #断点续训 下面resume=True要打开
+    #model = YOLO('ultralytics/cfg/models/12/yolo12.yaml') # YOLO12
+    model=YOLO('runs/train/exp/weights/last.pt')  #断点续训 下面resume=True要打开
     # model.load('yolo11n.pt') # loading pretrain weights
     model.train(data='VisDrone2019yolo.yaml',
                 cache=False,
@@ -40,9 +40,9 @@ if __name__ == '__main__':
                 # device='0,1', # 指定显卡和多卡训练参考<YOLOV11配置文件.md>下方常见错误和解决方案
                 optimizer='SGD', # using SGD
                 # patience=0, # set 0 to close earlystop.
-                # resume=True, # 断点续训,YOLO初始化时选择last.pt,不懂就在百度云.txt找断点续训的视频
-                # amp=False, # close amp | loss出现nan可以关闭amp
+                resume=True, # 断点续训,YOLO初始化时选择last.pt,不懂就在百度云.txt找断点续训的视频
+                amp=False, # close amp | loss出现nan可以关闭amp
                 # fraction=0.2,
-                project='runs/train',
+                project='runs',
                 name='exp',
                 )
