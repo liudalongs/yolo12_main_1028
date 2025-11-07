@@ -1,4 +1,5 @@
 import warnings, os
+export WANDB_MODE=disabled
 # os.environ["CUDA_VISIBLE_DEVICES"]="-1"    # 代表用cpu训练 不推荐！没意义！ 而且有些模块不能在cpu上跑
 # os.environ["CUDA_VISIBLE_DEVICES"]="0"     # 代表用第一张卡进行训练  0：第一张卡 1：第二张卡
 # 多卡训练参考<YOLOV11配置文件.md>下方常见错误和解决方案
@@ -43,7 +44,6 @@ if __name__ == '__main__':
                 resume=True, # 断点续训,YOLO初始化时选择last.pt,不懂就在百度云.txt找断点续训的视频
                 amp=False, # close amp | loss出现nan可以关闭amp
                 # fraction=0.2,
-                disable_wandb=True,
                 project='runs',
                 name='exp',
                 )
