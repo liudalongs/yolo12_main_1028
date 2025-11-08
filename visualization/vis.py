@@ -32,7 +32,7 @@ def read_csv_files_to_dict(csv_files):
 
 def print_mAP50_95(csv_dict, file_names):
     # 提取指定列
-    column_name = '    metrics/mAP50-95(B)'
+    column_name = 'metrics/mAP50(B)'   #column_name = 'metrics/mAP50(B)'
     # 曲线平滑
     def moving_average(interval, windowsize):
         p = k // 2
@@ -69,7 +69,7 @@ def print_mAP50_95(csv_dict, file_names):
     plt.legend()
     plt.grid(True)
     plt.xlabel('epoch')
-    plt.ylabel('mAP50-95')
+    plt.ylabel('mAP50') #'mAP50-95'
     plt.show()
 
 

@@ -1,4 +1,5 @@
 import warnings, os
+os.environ["WANDB_MODE"] = "disabled"
 # os.environ["CUDA_VISIBLE_DEVICES"]="-1"    # 代表用cpu训练 不推荐！没意义！ 而且有些模块不能在cpu上跑
 # os.environ["CUDA_VISIBLE_DEVICES"]="0"     # 代表用第一张卡进行训练  0：第一张卡 1：第二张卡
 # 多卡训练参考<YOLOV11配置文件.md>下方常见错误和解决方案
@@ -27,14 +28,14 @@ from ultralytics import YOLO
 # YOLO13配置文件路径：ultralytics/cfg/models/13 预训练权重在这里下:https://github.com/iMoonLab/yolov13
 
 if __name__ == '__main__':
-    #model = YOLO('ultralytics/cfg/models/12/yolo12.yaml') # YOLO12
-    model=YOLO('runs/train/exp/weights/last.pt')  #断点续训 下面resume=True要打开
+    model = YOLO('ultralytics/cfg/models/11/yolo11.yaml') # YOLO11
+    #model=YOLO('runs/train/exp/weights/last.pt')  #断点续训 下面resume=True要打开
     # model.load('yolo11n.pt') # loading pretrain weights
     model.train(data='VisDrone2019yolo.yaml',
                 cache=False,
                 imgsz=640,
-                epochs=1,
-                batch=4,
+                epochs=300,
+                batch=24,
                 close_mosaic=0, # 最后多少个epoch关闭mosaic数据增强，设置0代表全程开启mosaic训练
                 workers=4, # Windows下出现莫名其妙卡主的情况可以尝试把workers设置为0
                 # device='0,1', # 指定显卡和多卡训练参考<YOLOV11配置文件.md>下方常见错误和解决方案
@@ -44,5 +45,5 @@ if __name__ == '__main__':
                 amp=False, # close amp | loss出现nan可以关闭amp
                 # fraction=0.2,
                 project='runs',
-                name='exp',
+                name='exp11',
                 )

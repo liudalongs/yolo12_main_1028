@@ -17,12 +17,12 @@ def get_weight_size(path):
     return f'{stats.st_size / 1024 / 1024:.1f}'
 
 if __name__ == '__main__':
-    model_path = 'runs/train/exp/weights/best.pt'
+    model_path = 'runs/train/yolo12n-300-24/weights/best.pt'
     model = YOLO(model_path) # 选择训练好的权重路径
     result = model.val(data='VisDrone2019yolo.yaml',
                         split='val', # split可以选择train、val、test 根据自己的数据集情况来选择.
                         imgsz=640,
-                        batch=16,
+                        batch=24,
                         # iou=0.7,
                         # rect=False,
                         # save_json=True, # if you need to cal coco metrice

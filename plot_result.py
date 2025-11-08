@@ -8,8 +8,7 @@ import matplotlib.pylab as plt
 
 pwd = os.getcwd()
 
-names = []
-
+names = ['yolo12n-300-24']
 plt.figure(figsize=(10, 10))
 
 plt.subplot(2, 2, 1)
