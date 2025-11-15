@@ -5,7 +5,7 @@ from ultralytics import YOLO
 
 if __name__ == '__main__':
     error_result = []
-    for yaml_path in tqdm.tqdm(os.listdir('ultralytics/cfg/models/11')):
+    for yaml_path in tqdm.tqdm(os.listdir('ultralytics/cfg/models/8')):
         if 'rtdetr' not in yaml_path and 'cls' not in yaml_path and 'world' not in yaml_path:
             try:
                 model = YOLO(f'ultralytics/cfg/models/11/{yaml_path}')
