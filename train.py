@@ -28,8 +28,8 @@ from ultralytics import YOLO
 # YOLO13配置文件路径：ultralytics/cfg/models/13 预训练权重在这里下:https://github.com/iMoonLab/yolov13
 
 if __name__ == '__main__':
-    model = YOLO('ultralytics/cfg/models/12/yolo12-Detect_LSCSBD.yaml') # YOLO11
-    #model=YOLO('runs/train/exp/weights/last.pt')  #断点续训 下面resume=True要打开
+    #model = YOLO('ultralytics/cfg/models/12/yolo12-Detect_LSCSBD.yaml') # YOLO11
+    model=YOLO('runs/train/yolo12-Detect_LSCSBD-400-24/weights/last.pt')  #断点续训 下面resume=True要打开
     # model.load('yolo11n.pt') # loading pretrain weights
     model.train(data='VisDrone2019yolo.yaml',
                 cache=False,
