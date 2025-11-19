@@ -67,7 +67,8 @@ from ultralytics.nn.modules import (
     v10Detect,
     SpatialAttention,
     CBAM,
-    A2C2f
+    A2C2f,
+    A2C2f_FULL,
 )
 from ultralytics.nn.extra_modules import *
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
@@ -142,7 +143,7 @@ C3K2_CLASS = (C3k2_Faster, C3k2_ODConv, C3k2_Faster_EMA, C3k2_DBB, C3k2_DeepDBB,
               C3k2_GroupMambaBlock, C3k2_MambaVision, DSC3k2, C3k2_wConv, C3k2_FourierConv, C3k2_GLVSS, C3k2_ESC, C3k2_MBRConv3, C3k2_MBRConv5, C3k2_VSSD, C3k2_TVIM, C3k2_CSI, C3k2_SHSA_EPGO, C3k2_SHSA_EPGO_CGLU, C3k2_ConvAttn, C3k2_UniConvBlock, C3k2_LGLB,
               C3k2_ConverseB, C3k2_Converse, C3k2_GCConv, C3k2_CFBlock, C3k2_FMABlock, C3k2_LWGA, C3k2_CSSC, C3k2_CNCM, C3k2_HFRB, C3k2_EVA
               )
-A2C2F_CLASS = (A2C2f, A2C2f_CGLU, A2C2f_KAN, A2C2f_DFFN, A2C2f_FRFN, A2C2f_DYT, A2C2f_CGLU_DYT, A2C2f_DFFN_DYT, A2C2f_FMFFN, A2C2f_FMFFN_DYT, A2C2f_SEFN, A2C2f_Mona, A2C2f_DFFN_DYT_Mona, A2C2f_SEFFN, A2C2f_EDFFN)
+A2C2F_CLASS = (A2C2f, A2C2f_FULL,A2C2f_CGLU, A2C2f_KAN, A2C2f_DFFN, A2C2f_FRFN, A2C2f_DYT, A2C2f_CGLU_DYT, A2C2f_DFFN_DYT, A2C2f_FMFFN, A2C2f_FMFFN_DYT, A2C2f_SEFN, A2C2f_Mona, A2C2f_DFFN_DYT_Mona, A2C2f_SEFFN, A2C2f_EDFFN)
 C2PSA_CLASS = (C2PSA, C2BRA, C2CGA, C2DA, C2DPB, C2Pola, C2TSSA, C2ASSA, C2PSA_DYT, C2TSSA_DYT, C2Pola_DYT, C2PSA_FMFFN, C2PSA_CGLU, C2PSA_SEFN, C2PSA_Mona, C2PSA_SEFFN, C2TSSA_DYT_Mona, C2TSSA_DYT_Mona_SEFN, C2TSSA_DYT_Mona_SEFFN, C2PSA_EDFFN,
                C2TSSA_DYT_Mona_EDFFN, C2MSLA, C2PSA_EPGO, C2PSA_DML, C2PSA_LRSA, C2PSA_MALA)
 class BaseModel(nn.Module):

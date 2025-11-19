@@ -1109,7 +1109,7 @@ class Detect_LSCSBD(nn.Module):
 
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
-        for i in range(self.nl):
+        for i in range(self.nl): #3
             x[i] = self.conv[i](x[i])
             for j in range(len(self.share_conv)):
                 x[i] = self.act(self.separate_bn[j](self.share_conv[j](x[i])))

@@ -58,7 +58,9 @@ __all__ = (
     "PSA",
     "SCDown",
     "ABlock",
-    "A2C2f"
+    "ABlock_FULL",
+    "A2C2f",
+    "A2C2f_FULL",
 )
 
 
@@ -1230,13 +1232,13 @@ class AAttn(nn.Module):
 
     """
 
-    def __init__(self, dim, num_heads, area=1):
+    def __init__(self, dim, num_heads, area=1): #ec2,   ec2//32,   4
         """Initializes the area-attention module, a simple yet efficient attention module for YOLO."""
         super().__init__()
         self.area = area #4
 
         self.num_heads = num_heads #ec2//32
-        self.head_dim = head_dim = dim // num_heads #ec2//ec2//32
+        self.head_dim = head_dim = dim // num_heads #ec2//ec2//32=32
         all_head_dim = head_dim * self.num_heads #ec2
 
         self.qk = Conv(dim, all_head_dim * 2, 1, act=False)
@@ -1252,19 +1254,19 @@ class AAttn(nn.Module):
         N = H * W
 
         if x.is_cuda and FLASH_ATTN_FLAG:
-            qk = self.qk(x).flatten(2).transpose(1, 2)
-            v = self.v(x)
-            pp = self.pe(v)
-            v = v.flatten(2).transpose(1, 2)
+            qk = self.qk(x).flatten(2).transpose(1, 2) #qk=(B, N, 2*C)
+            v = self.v(x) # b c h w
+            pp = self.pe(v) #b c h w
+            v = v.flatten(2).transpose(1, 2) #v=(B, N, C)
 
             if self.area > 1:
-                qk = qk.reshape(B * self.area, N // self.area, C * 2)
-                v = v.reshape(B * self.area, N // self.area, C)
-                B, N, _ = qk.shape
-            q, k = qk.split([C, C], dim=2)
-            q = q.view(B, N, self.num_heads, self.head_dim)
-            k = k.view(B, N, self.num_heads, self.head_dim)
-            v = v.view(B, N, self.num_heads, self.head_dim)
+                qk = qk.reshape(B * self.area, N // self.area, C * 2) #qk=(B*4, N//4, 2*C)
+                v = v.reshape(B * self.area, N // self.area, C) #v=(B*4, N//4, C)
+                B, N, _ = qk.shape #B*4, N//4, 2*C
+            q, k = qk.split([C, C], dim=2)#q=(B*4, N//4, C), k=(B*4, N//4, C)  ec2=C
+            q = q.view(B, N, self.num_heads, self.head_dim)#q=(B*4, N//4, 2, C//2) self.num_heads=ec2//32
+            k = k.view(B, N, self.num_heads, self.head_dim)#k=(B*4, N//4, 2, C//2)
+            v = v.view(B, N, self.num_heads, self.head_dim)#v=(B*4, N//4, 2, C//2)
 
             x = flash_attn_func( #可忽略
                 q.contiguous().half(),
@@ -1273,35 +1275,138 @@ class AAttn(nn.Module):
             ).to(q.dtype)
 
             if self.area > 1:
-                x = x.reshape(B // self.area, N * self.area, C)
+                x = x.reshape(B // self.area, N * self.area, C) # B N C
                 B, N, _ = x.shape
-            x = x.reshape(B, H, W, C).permute(0, 3, 1, 2)
+            x = x.reshape(B, H, W, C).permute(0, 3, 1, 2) # B C H W
         else:
-            qk = self.qk(x).flatten(2)
-            v = self.v(x)
-            pp = self.pe(v)
-            v = v.flatten(2)
+            qk = self.qk(x).flatten(2) #B 2*C N
+            v = self.v(x) #B C H W
+            pp = self.pe(v)#B C H W
+            v = v.flatten(2)# B C N
             if self.area > 1:
-                qk = qk.reshape(B * self.area, C * 2, N // self.area)
-                v = v.reshape(B * self.area, C, N // self.area)
-                B, _, N = qk.shape
+                qk = qk.reshape(B * self.area, C * 2, N // self.area) #B*4 2*C N//4
+                v = v.reshape(B * self.area, C, N // self.area) #B*4 C N//4
+                B, _, N = qk.shape #B*4 2*C N//4
 
-            q, k = qk.split([C, C], dim=1)
-            q = q.view(B, self.num_heads, self.head_dim, N)
-            k = k.view(B, self.num_heads, self.head_dim, N)
-            v = v.view(B, self.num_heads, self.head_dim, N)
+            q, k = qk.split([C, C], dim=1) #q=(B*4,  C,N//4), k=(B*4, C,N//4)
+            q = q.view(B, self.num_heads, self.head_dim, N) #q=(B*4, 2, C//2,N//4) self.num_heads=ec2//32
+            k = k.view(B, self.num_heads, self.head_dim, N)#K=(B*4, 2, C//2,N//4)
+            v = v.view(B, self.num_heads, self.head_dim, N)#v=(B*4, 2, C//2,N//4)
+            #(B, self.num_heads, N//4, N//4) self.head_dim ** -0.5: 这是 1 / sqrt(self.head_dim)
             attn = (q.transpose(-2, -1) @ k) * (self.head_dim ** -0.5)
-            max_attn = attn.max(dim=-1, keepdim=True).values
-            exp_attn = torch.exp(attn - max_attn)
-            attn = exp_attn / exp_attn.sum(dim=-1, keepdim=True)
-            x = (v @ attn.transpose(-2, -1))
+            max_attn = attn.max(dim=-1, keepdim=True).values #max_attn 最终就是那个形状为 (B, self.num_heads, N, 1) 的最大值张量。
+            exp_attn = torch.exp(attn - max_attn) #torch.exp() 是自然指数函数。它将 attn - max_attn 中的每个元素 x 计算为 e^x
+            attn = exp_attn / exp_attn.sum(dim=-1, keepdim=True) #(B, self.num_heads, N, N)
+            x = (v @ attn.transpose(-2, -1)) #(B*4, 2, C//2,N//4)
 
             if self.area > 1:
-                x = x.reshape(B // self.area, C, N * self.area)
+                x = x.reshape(B // self.area, C, N * self.area) #B C N
                 B, _, N = x.shape
             x = x.reshape(B, C, H, W)
 
         return self.proj(x + pp)
+
+
+class AAttn_FULL(nn.Module):
+    """
+    Area-attention module with the requirement of flash attention.
+
+    Attributes:
+        dim (int): Number of hidden channels;
+        num_heads (int): Number of heads into which the attention mechanism is divided;
+        area (int, optional): Number of areas the feature map is divided. Defaults to 1.
+
+    Methods:
+        forward: Performs a forward process of input tensor and outputs a tensor after the execution of the area attention mechanism.
+
+    Examples:
+        >>> import torch
+        >>> from ultralytics.nn.modules import AAttn_FULL
+        >>> model = AAttn(dim=64, num_heads=2, area=4)
+        >>> x = torch.randn(2, 64, 128, 128)
+        >>> output = model(x)
+        >>> print(output.shape)
+
+    Notes:
+        recommend that dim//num_heads be a multiple of 32 or 64.
+
+    """
+
+    def __init__(self, dim, num_heads, area=1):  # ec2,   ec2//32,   4
+        """Initializes the area-attention module, a simple yet efficient attention module for YOLO."""
+        super().__init__()
+        self.area = area  # 4
+
+        self.num_heads = num_heads  # ec2//32
+        self.head_dim = head_dim = dim // num_heads  # ec2//ec2//32=32
+        all_head_dim = head_dim * self.num_heads  # ec2
+
+        self.qk = Conv(dim, all_head_dim * 2, 1, act=False)
+        self.v = Conv(dim, all_head_dim, 1, act=False)
+        self.proj = Conv(all_head_dim, dim, 1, act=False)
+
+        self.pe = Conv(all_head_dim, dim, 5, 1, 2, g=dim, act=False)
+
+    def forward(self, x):
+        """Processes the input tensor 'x' through the area-attention"""
+        B, C, H, W = x.shape
+        N = H * W
+
+        if x.is_cuda and FLASH_ATTN_FLAG:
+            # 计算 qk 和 v
+            qk = self.qk(x).flatten(2).transpose(1, 2)  # 形状变为 (B, N, 2*C)
+            v = self.v(x)  # 形状为 (B, C, H, W)
+            pp = self.pe(v)  # 添加位置编码，形状不变
+            v = v.flatten(2).transpose(1, 2)  # 展平空间维度，形状变为 (B, N, C)
+
+            # 不再进行区域划分，直接使用整个特征图
+            q, k = qk.split([C, C], dim=2)  # 分别得到 q 和 k，形状均为 (B, N, C)
+
+            # 将 q, k, v 调整为适合多头注意力的形状
+            q = q.view(B, N, self.num_heads, self.head_dim)  # 形状变为 (B, N, num_heads, head_dim)
+            k = k.view(B, N, self.num_heads, self.head_dim)  # 形状变为 (B, N, num_heads, head_dim)
+            v = v.view(B, N, self.num_heads, self.head_dim) #// 形状变为(B, N, num_heads, head_dim)
+
+            # 使用 flash_attn_func 进行注意力计算
+            x = flash_attn_func(
+                q.contiguous().half(),
+                k.contiguous().half(),
+                v.contiguous().half()
+            ).to(q.dtype)
+
+            # 注意这里不需要再处理区域拼接的问题，因为没有进行区域划分
+            x = x.reshape(B, H, W, C).permute(0, 3, 1, 2)  # 最终形状回到 (B, C, H, W)
+        else:
+            # 假设 x 的形状是 (B, C, H, W)
+            qk = self.qk(x).flatten(2)  # 形状变为 (B, 2*C, N)，其中 N=H*W
+            v = self.v(x)  # 形状保持为 (B, C, H, W)
+            pp = self.pe(v)  # 添加位置编码，形状不变
+            v = v.flatten(2)  # 展平空间维度，形状变为 (B, C, N)
+
+            # 省略了与区域划分相关的代码
+
+            # 分割 q 和 k
+            q, k = qk.split([C, C], dim=1)  # 分别得到 q 和 k，形状均为 (B, C, N)
+
+            # 将 q, k, v 调整为适合多头注意力的形状
+            q = q.view(B, self.num_heads, self.head_dim, N)  # 形状变为 (B, num_heads, head_dim, N)
+            k = k.view(B, self.num_heads, self.head_dim, N) #// 形状变为(B, num_heads, head_dim, N)
+            v = v.view(B, self.num_heads, self.head_dim, N) #// 形状变为(B, num_heads, head_dim, N)
+
+            # 计算注意力分数
+            attn = (q.transpose(-2, -1) @ k) * (self.head_dim ** -0.5) #// 注意力分数，形状为(B, num_heads, N, N)
+            max_attn = attn.max(dim=-1, keepdim=True).values #// 找到最大值用于数值稳定
+            exp_attn = torch.exp(attn - max_attn) #// 应用指数函数，同时确保数值稳定性
+            attn = exp_attn / exp_attn.sum(dim=-1, keepdim=True) #// 归一化得到最终的注意力权重
+
+            # 应用注意力权重到 v 上
+            x = (v @ attn.transpose(-2, -1))  #形状应为(B, num_heads, head_dim, N)
+
+            # 最后一步，调整形状以匹配原始输入的尺寸
+            x = x.reshape(B, C, H, W)  #重新调整形状回到(B, C, H, W)
+
+        return self.proj(x + pp)
+
 
 class ABlock(nn.Module):
     """
@@ -1343,10 +1448,70 @@ class ABlock(nn.Module):
         """
         super().__init__()
 
-        self.attn = AAttn(dim, num_heads=num_heads, area=area)
-        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.attn = AAttn(dim, num_heads=num_heads, area=area) #ec2,   ec2//32,   4
+        mlp_hidden_dim = int(dim * mlp_ratio) #ec2*2.0
         self.mlp = nn.Sequential(Conv(dim, mlp_hidden_dim, 1), Conv(mlp_hidden_dim, dim, 1, act=False))
+                                      #ec2,     ec2*2.0,     1        ec2*2.0,        ec2     1
+        #  nn.Module.apply(fn) 是 PyTorch 的内置方法，它的作用是：
+        # 递归地将函数fn应用于模块本身及其所有子模块（children）
+        # 通常在__init__的最后调用，确保所有层都已创建。
+        self.apply(self._init_weights)
+    def _init_weights(self, m):
+        """Initialize weights using a truncated normal distribution."""
+        if isinstance(m, nn.Conv2d):
+            nn.init.trunc_normal_(m.weight, std=0.02)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
 
+    def forward(self, x):
+        """Forward pass through ABlock, applying area-attention and feed-forward layers to the input tensor."""
+        x = x + self.attn(x)
+        return x + self.mlp(x)
+
+class ABlock_FULL(nn.Module):
+    """
+    Area-attention block module for efficient feature extraction in YOLO models.
+
+    This module implements an area-attention mechanism combined with a feed-forward network for processing feature maps.
+    It uses a novel area-based attention approach that is more efficient than traditional self-attention while
+    maintaining effectiveness.
+
+    Attributes:
+        attn (AAttn): Area-attention module for processing spatial features.
+        mlp (nn.Sequential): Multi-layer perceptron for feature transformation.
+
+    Methods:
+        _init_weights: Initializes module weights using truncated normal distribution.
+        forward: Applies area-attention and feed-forward processing to input tensor.
+
+    Examples:
+        >>> block = ABlock_FULL(dim=256, num_heads=8, mlp_ratio=1.2, area=1)
+        >>> x = torch.randn(1, 256, 32, 32)
+        >>> output = block(x)
+        >>> print(output.shape)
+        torch.Size([1, 256, 32, 32])
+    """
+
+    def __init__(self, dim, num_heads, mlp_ratio=1.2, area=1):
+        """
+        Initializes an Area-attention block module for efficient feature extraction in YOLO models.
+
+        This module implements an area-attention mechanism combined with a feed-forward network for processing feature
+        maps. It uses a novel area-based attention approach that is more efficient than traditional self-attention
+        while maintaining effectiveness.
+
+        Args:
+            dim (int): Number of input channels.
+            num_heads (int): Number of heads into which the attention mechanism is divided.
+            mlp_ratio (float): Expansion ratio for MLP hidden dimension.
+            area (int): Number of areas the feature map is divided.
+        """
+        super().__init__()
+
+        self.attn = AAttn_FULL(dim, num_heads=num_heads, area=area) #ec2,   ec2//32,   4
+        mlp_hidden_dim = int(dim * mlp_ratio) #ec2*2.0
+        self.mlp = nn.Sequential(Conv(dim, mlp_hidden_dim, 1), Conv(mlp_hidden_dim, dim, 1, act=False))
+                                      #ec2,     ec2*2.0,     1        ec2*2.0,        ec2     1
         #  nn.Module.apply(fn) 是 PyTorch 的内置方法，它的作用是：
         # 递归地将函数fn应用于模块本身及其所有子模块（children）
         # 通常在__init__的最后调用，确保所有层都已创建。
@@ -1426,5 +1591,76 @@ class A2C2f(nn.Module):
         y.extend(m(y[-1]) for m in self.m) #nn.ModuleList里面有两个nn.Sequential
         y = self.cv2(torch.cat(y, 1))
         if self.gamma is not None:
+            #self.gamma 被重塑为形状 (1, c2, 1, 1)这种形状使得
+            # self.gamma 可以通过广播（Broadcasting）机制与形状为
+            # (Batch, c2, Height, Width) 的特征图 y 进行逐元素相乘。
+            return x + self.gamma.view(-1, len(self.gamma), 1, 1) * y
+        return y
+
+class A2C2f_FULL(nn.Module):
+    """
+    Area-Attention C2f module for enhanced feature extraction with area-based attention mechanisms.
+
+    This module extends the C2f architecture by incorporating area-attention and ABlock layers for improved feature
+    processing. It supports both area-attention and standard convolution modes.
+
+    Attributes:
+        cv1 (Conv): Initial 1x1 convolution layer that reduces input channels to hidden channels.
+        cv2 (Conv): Final 1x1 convolution layer that processes concatenated features.
+        gamma (nn.Parameter | None): Learnable parameter for residual scaling when using area attention.
+        m (nn.ModuleList): List of either ABlock or C3k modules for feature processing.
+
+    Methods:
+        forward: Processes input through area-attention or standard convolution pathway.
+
+    Examples:
+        >>> m = A2C2f_FULL(512, 512, n=1, a2=True, area=1)
+        >>> x = torch.randn(1, 512, 32, 32)
+        >>> output = m(x)
+        >>> print(output.shape)
+        torch.Size([1, 512, 32, 32])
+    """
+
+    def __init__(self, c1, c2, n=1, a2=True, area=1, residual=False, mlp_ratio=2.0, e=0.5, g=1, shortcut=True):
+        """          #[128,128, 2,   True,    4]
+        Area-Attention C2f module for enhanced feature extraction with area-based attention mechanisms.
+
+        Args:
+            c1 (int): Number of input channels.
+            c2 (int): Number of output channels.
+            n (int): Number of ABlock or C3k modules to stack.
+            a2 (bool): Whether to use area attention blocks. If False, uses C3k blocks instead.
+            area (int): Number of areas the feature map is divided.
+            residual (bool): Whether to use residual connections with learnable gamma parameter.
+            mlp_ratio (float): Expansion ratio for MLP hidden dimension.
+            e (float): Channel expansion ratio for hidden channels.
+            g (int): Number of groups for grouped convolutions.
+            shortcut (bool): Whether to use shortcut connections in C3k blocks.
+        """
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        assert c_ % 32 == 0, "Dimension of ABlock be a multiple of 32."
+
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv((1 + n) * c_, c2, 1)
+
+        self.gamma = nn.Parameter(0.01 * torch.ones(c2), requires_grad=True) if a2 and residual else None
+        self.m = nn.ModuleList(
+            nn.Sequential(*(ABlock_FULL(c_, c_ // 32, mlp_ratio, area) for _ in range(2)))
+            if a2
+            else C3k(c_, c_, 2, shortcut, g)
+            for _ in range(n)
+        )
+        # print(c1, c2, n, a2, area)
+
+    def forward(self, x):
+        """Forward pass through R-ELAN layer."""
+        y = [self.cv1(x)]
+        y.extend(m(y[-1]) for m in self.m) #nn.ModuleList里面有两个nn.Sequential
+        y = self.cv2(torch.cat(y, 1))
+        if self.gamma is not None:
+            #self.gamma 被重塑为形状 (1, c2, 1, 1)这种形状使得
+            # self.gamma 可以通过广播（Broadcasting）机制与形状为
+            # (Batch, c2, Height, Width) 的特征图 y 进行逐元素相乘。
             return x + self.gamma.view(-1, len(self.gamma), 1, 1) * y
         return y

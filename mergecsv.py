@@ -1,8 +1,8 @@
 import pandas as pd
 
 # 1. 读取两个 CSV 文件
-df1 = pd.read_csv(r'D:\yolo改进合集\yolov11改进\ultralytics-yolo11-main1028\runs\train\exp\results.csv')
-df2 = pd.read_csv(r'D:\yolo改进合集\实验数据\yolo12n-300-24\results.csv')
+df1 = pd.read_csv(r'D:\liulanqi_xiazai\yolo12_main_1028\runs\train\yolo12-Detect_LSCSBD-400-24\results.csv')
+df2 = pd.read_csv(r'D:\liulanqi_xiazai\yolo12_main_1028\runs\exp122\results.csv')
 
 # 2. 合并两个 DataFrame（纵向堆叠）
 merged = pd.concat([df1, df2], ignore_index=True)
@@ -15,4 +15,4 @@ merged_sorted = merged.sort_values(by=merged.columns[0], ascending=True)
 merged_sorted = merged_sorted.reset_index(drop=True)
 
 # 5. 保存结果
-merged_sorted.to_csv(r'D:\yolo改进合集\实验数据\yolo12n-300-24\results1.csv', index=False)
+merged_sorted.to_csv(r'D:\liulanqi_xiazai\yolo12_main_1028\runs\exp122\results1.csv', index=False)
