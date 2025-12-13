@@ -9,7 +9,7 @@
 
 #D:\dp_project\datasets\VisDrone2019yolo  /kaggle/input/visdrone2019yolo
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-path:  D:\dp_project\datasets\VisDrone2019yolo # dataset root dir 要用绝对路径
+path:  /kaggle/input/visdrone2019yolo # dataset root dir 要用绝对路径
 train: images/train  # train images (relative to 'path') 4 images
 val: images/val  # val images (relative to 'path') 4 images
 test: #images/test #(optional)
