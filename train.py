@@ -28,8 +28,8 @@ from ultralytics import YOLO
 # YOLO13配置文件路径：ultralytics/cfg/models/13 预训练权重在这里下:https://github.com/iMoonLab/yolov13
 
 if __name__ == '__main__':
-    #model = YOLO('ultralytics/cfg/models/12/yolo12-AAttn_FULL.yaml') # YOLO11
-    model=YOLO('runs/train/yolo12-AAttn_FULL/weights/last.pt')  #断点续训 下面resume=True要打开
+    model = YOLO('ultralytics/cfg/models/12/yolo12-ALL_AAttn_FULL.yaml') # YOLO11
+    #model=YOLO('runs/train/yolo12-ALL_AAttn_FULL.yaml/weights/last.pt')  #断点续训 下面resume=True要打开
     # model.load('yolo11n.pt') # loading pretrain weights
     model.train(data='VisDrone2019yolo.yaml',
                 cache=False,
@@ -41,10 +41,10 @@ if __name__ == '__main__':
                 # device='0,1', # 指定显卡和多卡训练参考<YOLOV11配置文件.md>下方常见错误和解决方案
                 optimizer='SGD', # using SGD
                 # patience=0, # set 0 to close earlystop.
-                resume=True, # 断点续训,YOLO初始化时选择last.pt,不懂就在百度云.txt找断点续训的视频
+                #resume=True, # 断点续训,YOLO初始化时选择last.pt,不懂就在百度云.txt找断点续训的视频
                 amp=False, # close amp | loss出现nan可以关闭amp
                 # fraction=0.2,
                 #accumulate=4, # 梯度累计次数，默认是1，建议根据显存情况设置，一般显存足够大可以设置为4-8
                 project='runs',
-                name='yolo12-AAttn_FULL',
+                name='yolo12-ALL_AAttn_FULL',
                 )

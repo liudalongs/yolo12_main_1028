@@ -8,7 +8,7 @@ import matplotlib.pylab as plt
 
 pwd = os.getcwd()
 
-names = ['yolo12n-300-24']
+names = ['yolo12-AAttn_FULL-400-16']
 plt.figure(figsize=(10, 10))
 
 plt.subplot(2, 2, 1)
