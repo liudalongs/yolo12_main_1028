@@ -46,5 +46,5 @@ if __name__ == '__main__':
                 # fraction=0.2,
                 #accumulate=4, # 梯度累计次数，默认是1，建议根据显存情况设置，一般显存足够大可以设置为4-8
                 project='runs',
-                name='yolo12-ALL_AAttn_FULL',
+                name='yolo12-CSP-PMSFA',
                 )
