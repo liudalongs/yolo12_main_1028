@@ -4,7 +4,7 @@ from ultralytics import YOLO
 
 if __name__ == '__main__':
     # choose your yaml file
-    model = YOLO('ultralytics/cfg/models/12/yolo12-ALL_AAttn_FULL.yaml')
+    model = YOLO('ultralytics/cfg/models/12/yolo12-CSP-PMSFA.yaml')
     model.info(detailed=True)
     try:
         model.profile(imgsz=[640, 640])
