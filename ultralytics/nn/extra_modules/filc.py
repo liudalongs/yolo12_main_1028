@@ -5,7 +5,7 @@ import torch
 from einops import rearrange 
 from einops.layers.torch import Rearrange
 from timm.layers import  DropPath
-
+import torch.nn.functional as F
 __all__ = ['FMFFN', 'FAT_Block'] 
 
 def img2windows(img, H_sp, W_sp):
@@ -141,31 +141,132 @@ class WindowAttention(nn.Module):
         x = windows2img(x, self.H_sp, self.W_sp, H, W)  # B H' W' C
 
         return x
+#-------------作者的版本--------------
 
+# class WindowFrequencyModulation_FMFFN(nn.Module):
+#     def __init__(self, dim, window_size):
+#         super().__init__()
+#         self.dim = dim
+#         self.window_size = window_size
+#         self.ratio = 1
+#         self.complex_weight= nn.Parameter(torch.cat((torch.ones(self.window_size, self.window_size//2+1, self.ratio*dim, 1, dtype=torch.float32),\
+#         torch.zeros(self.window_size, self.window_size//2+1, self.ratio*dim, 1, dtype=torch.float32)),dim=-1))
+#
+#     def forward(self, x):
+#         x = rearrange(x, 'b c (w1 p1) (w2 p2) -> b w1 w2 p1 p2 c', p1=self.window_size, p2=self.window_size)
+#
+#         x_dtype = x.dtype
+#         x = x.to(torch.float32)
+#
+#         x= torch.fft.rfft2(x,dim=(3, 4), norm='ortho')
+#
+#         weight = torch.view_as_complex(self.complex_weight)
+#         x = x * weight
+#         x = torch.fft.irfft2(x, s=(self.window_size, self.window_size), dim=(3, 4), norm='ortho')
+#
+#         x = rearrange(x, 'b w1 w2 p1 p2 c -> b c (w1 p1) (w2 p2)')
+#         return x.to(x_dtype)
+
+#-----------为了填充尺寸改进的版本--------------------------
 class WindowFrequencyModulation_FMFFN(nn.Module):
     def __init__(self, dim, window_size):
         super().__init__()
         self.dim = dim
         self.window_size = window_size
         self.ratio = 1
-        self.complex_weight= nn.Parameter(torch.cat((torch.ones(self.window_size, self.window_size//2+1, self.ratio*dim, 1, dtype=torch.float32),\
-        torch.zeros(self.window_size, self.window_size//2+1, self.ratio*dim, 1, dtype=torch.float32)),dim=-1))
+        # 初始化复数权重参数
+        self.complex_weight = nn.Parameter(torch.cat((
+            torch.ones(self.window_size, self.window_size // 2 + 1, self.ratio * dim, 1, dtype=torch.float32),
+            torch.zeros(self.window_size, self.window_size // 2 + 1, self.ratio * dim, 1, dtype=torch.float32)
+        ), dim=-1))
 
     def forward(self, x):
-        x = rearrange(x, 'b c (w1 p1) (w2 p2) -> b w1 w2 p1 p2 c', p1=self.window_size, p2=self.window_size)
+        # 1. 获取原始尺寸
+        B, C, H, W = x.shape
+        p1 = self.window_size
+        p2 = self.window_size
 
-        x_dtype = x.dtype
-        x = x.to(torch.float32)
-        
-        x= torch.fft.rfft2(x,dim=(3, 4), norm='ortho')
-      
+        # 2. 计算需要填充的大小，使 H 和 W 能被 window_size 整除
+        # 公式：(p - H % p) % p  -> 如果 H 能整除 p，结果为 0；否则结果为补齐所需的值
+        pad_h = (p1 - H % p1) % p1
+        pad_w = (p2 - W % p2) % p2
+
+        # 3. 如果需要填充，则进行 Padding
+        if pad_h > 0 or pad_w > 0:
+            # F.pad 的参数顺序是 (left, right, top, bottom)
+            x_padded = F.pad(x, (0, pad_w, 0, pad_h), mode='constant', value=0)
+        else:
+            x_padded = x
+
+        # 获取填充后的尺寸 (此时一定能被整除)
+        _, _, H_pad, W_pad = x_padded.shape
+
+        # 4. 执行 rearrange (现在不会报错了)
+        x_padded = rearrange(x_padded, 'b c (w1 p1) (w2 p2) -> b w1 w2 p1 p2 c', p1=p1, p2=p2)
+
+        # 保存原始数据类型并转为 float32 进行 FFT 计算
+        x_dtype = x_padded.dtype
+        x_padded = x_padded.to(torch.float32)
+
+        # 5. 执行频域操作 (FFT)
+        # 注意：这里对 p1, p2 维度 (即 rearrange 后的 dim 3, 4) 做 rfft
+        x_padded = torch.fft.rfft2(x_padded, dim=(3, 4), norm='ortho')
+
+        # 处理权重
         weight = torch.view_as_complex(self.complex_weight)
-        x = x * weight
-        x = torch.fft.irfft2(x, s=(self.window_size, self.window_size), dim=(3, 4), norm='ortho')
 
-        x = rearrange(x, 'b w1 w2 p1 p2 c -> b c (w1 p1) (w2 p2)')
-        return x.to(x_dtype)
+        # 广播机制自动匹配：weight shape [p1, p2//2+1, dim, 1]
+        # x_padded shape [B, w1, w2, p1, p2//2+1, C] (rfft 后最后一维变了)
+        # 需要注意 rfft2 后，最后一个空间维度的长度变成了 p2//2 + 1
+        # 你的 complex_weight 定义是 (p1, p2//2+1, dim, 1)，这里 dim 对应的是通道 C
+        # 确保乘法时维度对齐。通常 weight 需要 permute 或者 x 需要调整，但看你的定义：
+        # complex_weight: [p1, p2//2+1, C, 1]
+        # x_padded (after rfft): [B, w1, w2, p1, p2//2+1, C]
+        # 直接相乘可能维度不匹配，需要调整 weight 的维度顺序以匹配 x 的通道维
+        # 原代码逻辑假设 weight 能直接乘，这里我们显式调整一下以防万一
+        # weight shape: [p1, p2//2+1, C, 1] -> 需要变成 [1, 1, 1, p1, p2//2+1, C] 以便广播
+        weight_expanded = weight.permute(0, 1, 3, 2).unsqueeze(0).unsqueeze(0).unsqueeze(0)
+        # 解释: 原 [p1, p2/2+1, C, 1] -> permute(0,1,3,2) -> [p1, p2/2+1, 1, C]
+        # -> unsqueeze(0,0,0) -> [1, 1, 1, p1, p2/2+1, 1, C] ?
+        # 让我们重新检查 rfft 后的形状：
+        # input to rfft: [B, w1, w2, p1, p2, C]
+        # output of rfft2(dim=3,4): [B, w1, w2, p1, p2//2+1, C]
+        # weight: [p1, p2//2+1, C, 1]
+        # 为了相乘，weight 应该 reshape 为 [1, 1, 1, p1, p2//2+1, C]
+        weight_final = weight.squeeze(-1).permute(2, 0, 1).unsqueeze(0).unsqueeze(0).unsqueeze(0)
+        # weight: [p1, p2//2+1, C, 1] -> squeeze(-1) -> [p1, p2//2+1, C]
+        # -> permute(2, 0, 1) -> [C, p1, p2//2+1]
+        # -> unsqueeze(0,0,0) -> [1, 1, 1, C, p1, p2//2+1] -> 还是不对，x 的 C 在最后
 
+        # 修正乘法逻辑：
+        # x_padded: [B, w1, w2, p1, p2_half, C]
+        # weight:   [p1, p2_half, C, 1]
+        # 我们希望 weight 对应到 x 的 [3, 4, 5] 维度
+        # weight 调整为: [1, 1, 1, p1, p2_half, C]
+        weight_correct = weight.squeeze(-1).permute(2, 0, 1).unsqueeze(0).unsqueeze(0).unsqueeze(0)
+        # 上面这行得到的形状是 [1, 1, 1, C, p1, p2_half]，而 x 是 [..., p1, p2_half, C]
+        # 所以我们需要 weight 是 [..., p1, p2_half, C]
+        # 正确的 permute 应该是把 C 放到最后
+        weight_correct = weight.squeeze(-1)  # [p1, p2_half, C]
+        # 直接广播即可，因为 x 的前三个维度是 B, w1, w2，weight 没有这些维度，会自动广播
+        # 只要 weight 的后三个维度 [p1, p2_half, C] 对应 x 的后三个维度即可
+        # x: [B, w1, w2, p1, p2_half, C]
+        # weight: [p1, p2_half, C] -> 完美匹配！
+
+        x_padded = x_padded * weight_correct
+
+        # 6. 执行逆傅里叶变换 (IFFT)
+        # s 参数指定输出形状，必须是原始的 (p1, p2)
+        x_padded = torch.fft.irfft2(x_padded, s=(p1, p2), dim=(3, 4), norm='ortho')
+
+        # 7. 还原 rearrange
+        x_padded = rearrange(x_padded, 'b w1 w2 p1 p2 c -> b c (w1 p1) (w2 p2)')
+
+        # 8. 如果之前进行了填充，现在裁剪回原始尺寸 (H, W)
+        if pad_h > 0 or pad_w > 0:
+            x_padded = x_padded[:, :, :H, :W]
+
+        return x_padded.to(x_dtype)
 class FMFFN(nn.Module):
     def __init__(self,in_features, hidden_features=None, out_features=None, window_size=4, act_layer=nn.GELU) -> None:
         super().__init__()
