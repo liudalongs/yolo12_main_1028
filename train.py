@@ -28,7 +28,7 @@ from ultralytics import YOLO
 # YOLO13配置文件路径：ultralytics/cfg/models/13 预训练权重在这里下:https://github.com/iMoonLab/yolov13
 
 if __name__ == '__main__':
-    model = YOLO('ultralytics/cfg/models/11/yolo11-C3k2-StripCGLU.yaml') # YOLO11
+    model = YOLO('ultralytics/cfg/models/11/yolo11-C3k2-SFSConv.yaml') # YOLO11
     #model=YOLO('runs/train/yolo12-ALL_AAttn_FULL.yaml/weights/last.pt')  #断点续训 下面resume=True要打开
     # model.load('yolo11n.pt') # loading pretrain weights
     model.train(data='VisDrone2019yolo.yaml',
@@ -46,5 +46,5 @@ if __name__ == '__main__':
                 # fraction=0.2,
                 #accumulate=4, # 梯度累计次数，默认是1，建议根据显存情况设置，一般显存足够大可以设置为4-8
                 project='runs',
-                name='yolo11-C3k2-StripCGLU',
+                name='yolo11-C3k2-SFSConv',
                 )
